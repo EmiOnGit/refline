@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: {{LICENSE}}
 
 use crate::config::Config;
-use crate::fl;
+use crate::figure_drawing::FigureDrawingState;
+use crate::reference::RefStore;
+use crate::{fl, view};
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
-use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{Alignment, Length, Subscription};
+use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::{self, icon, menu, nav_bar};
-use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Apply, Element};
+use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
+use image::RgbaImage;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::Instant;
+use tracing::info;
 
 const REPOSITORY: &str = "https://github.com/pop-os/cosmic-app-template";
 const APP_ICON: &[u8] = include_bytes!("../res/icons/hicolor/scalable/apps/icon.svg");
@@ -27,6 +32,9 @@ pub struct AppModel {
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     // Configuration data that persists between application runs.
     config: Config,
+    /// Image references
+    pub ref_store: RefStore,
+    pub figure_drawing_state: FigureDrawingState,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -36,6 +44,9 @@ pub enum Message {
     SubscriptionChannel,
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
+    AddFilesToRefStore,
+    LoadNewReference,
+    LoadedNewReference(PathBuf, RgbaImage),
 }
 
 /// Create a COSMIC application from the app model
@@ -66,21 +77,23 @@ impl Application for AppModel {
         let mut nav = nav_bar::Model::default();
 
         nav.insert()
-            .text(fl!("page-id", num = 1))
-            .data::<Page>(Page::Page1)
-            .icon(icon::from_name("applications-science-symbolic"))
-            .activate();
+            .text(fl!("figure_drawing"))
+            .data::<Page>(Page::FigureDrawing)
+            .icon(icon::from_name("applications-science-symbolic"));
 
         nav.insert()
-            .text(fl!("page-id", num = 2))
-            .data::<Page>(Page::Page2)
+            .text(fl!("reference_board"))
+            .data::<Page>(Page::ReferenceBoard)
             .icon(icon::from_name("applications-system-symbolic"));
 
         nav.insert()
-            .text(fl!("page-id", num = 3))
-            .data::<Page>(Page::Page3)
-            .icon(icon::from_name("applications-games-symbolic"));
+            .text(fl!("reference_store"))
+            .data::<Page>(Page::ReferenceStore)
+            .icon(icon::from_name("applications-games-symbolic"))
+            .activate();
 
+        let mut ref_store = RefStore::try_load().unwrap_or_default();
+        ref_store.sync_with_local_filesystem();
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
@@ -91,15 +104,17 @@ impl Application for AppModel {
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
                 .map(|context| match Config::get_entry(&context) {
                     Ok(config) => config,
-                    Err((_errors, config)) => {
-                        // for why in errors {
-                        //     tracing::error!(%why, "error loading app config");
-                        // }
+                    Err((errors, config)) => {
+                        for why in errors {
+                            tracing::error!(%why, "error loading app config");
+                        }
 
                         config
                     }
                 })
                 .unwrap_or_default(),
+            ref_store,
+            figure_drawing_state: FigureDrawingState::default(),
         };
 
         // Create a startup command that sets the window title.
@@ -142,13 +157,15 @@ impl Application for AppModel {
     /// Application events will be processed through the view. Any messages emitted by
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<Self::Message> {
-        widget::text::title1(fl!("welcome"))
-            .apply(widget::container)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Center)
-            .into()
+        let Some(active_page): Option<&Page> = self.nav.active_data() else {
+            return view::center_text(fl!("welcome"));
+        };
+        println!("update view{active_page:?}");
+        match active_page {
+            Page::FigureDrawing => view::figure_drawing(self),
+            Page::ReferenceBoard => view::reference_board(self),
+            Page::ReferenceStore => view::reference_store(self),
+        }
     }
 
     /// Register subscriptions for this application.
@@ -187,6 +204,7 @@ impl Application for AppModel {
     /// Tasks may be returned for asynchronous execution of code in the background
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
+        // info!("update with {message:?}");
         match message {
             Message::OpenRepositoryUrl => {
                 _ = open::that_detached(REPOSITORY);
@@ -213,6 +231,38 @@ impl Application for AppModel {
             Message::UpdateConfig(config) => {
                 self.config = config;
             }
+            Message::AddFilesToRefStore => {
+                let folders = rfd::FileDialog::new().pick_folders();
+                if let Some(files) = folders {
+                    self.ref_store.push_folders(&files, true)
+                }
+            }
+            Message::LoadNewReference => {
+                info!("LOAD NEW REF RECEIVED");
+                let references = &self.ref_store.references;
+                let index = fastrand::usize(..references.len());
+                let reference = references.iter().nth(index).unwrap().clone();
+                self.figure_drawing_state.history.push(reference.clone());
+                if !self.figure_drawing_state.history.is_empty()
+                    && self.figure_drawing_state.current_ref.is_none()
+                {
+                    self.figure_drawing_state.current_ref = Some(0);
+                }
+                return Task::future(async move {
+                    info!("start loading image as reference");
+                    let Ok(img) = image::open(&reference.path) else {
+                        tracing::warn!("failed loading image");
+                        return Message::LoadNewReference.into();
+                    };
+                    let img = img.to_rgba8();
+                    info!("finish loading reference");
+                    return Message::LoadedNewReference(reference.path, img).into();
+                });
+            }
+            Message::LoadedNewReference(path, img) => {
+                self.ref_store.ref_data.insert(path, img);
+                tracing::warn!("Inserted new reference");
+            }
         }
         Task::none()
     }
@@ -221,19 +271,41 @@ impl Application for AppModel {
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<Self::Message> {
         // Activate the page in the model.
         self.nav.activate(id);
+        let on_enter_task: Task<Self::Message> =
+            if let Some(page) = self.nav.data::<Page>(self.nav.active()) {
+                match page {
+                    Page::FigureDrawing => self.on_figure_drawing_enter(),
+                    Page::ReferenceBoard => Task::none(),
+                    Page::ReferenceStore => Task::none(),
+                }
+            } else {
+                Task::none()
+            };
 
-        self.update_title()
+        self.update_title().chain(on_enter_task)
     }
 }
 
 impl AppModel {
+    pub fn on_figure_drawing_enter(&self) -> Task<<AppModel as cosmic::Application>::Message> {
+        let figure_drawing_state = &self.figure_drawing_state;
+        let now = Instant::now();
+        if figure_drawing_state.history.is_empty()
+            || figure_drawing_state.last_fetched - now > figure_drawing_state.duration_per_image
+        {
+            println!("send load ref message");
+            Task::done(Message::LoadNewReference.into())
+        } else {
+            Task::none()
+        }
+    }
     /// The about page for this app.
     pub fn about(&self) -> Element<Message> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
         let icon = widget::svg(widget::svg::Handle::from_memory(APP_ICON));
 
-        let title = widget::text::title3(fl!("app-title"));
+        let title = widget::text::title3(fl!("app_title"));
 
         let link = widget::button::link(REPOSITORY)
             .on_press(Message::OpenRepositoryUrl)
@@ -250,7 +322,7 @@ impl AppModel {
 
     /// Updates the header and window titles.
     pub fn update_title(&mut self) -> Task<Message> {
-        let mut window_title = fl!("app-title");
+        let mut window_title = fl!("app_title");
 
         if let Some(page) = self.nav.text(self.nav.active()) {
             window_title.push_str(" — ");
@@ -266,10 +338,11 @@ impl AppModel {
 }
 
 /// The page to display in the application.
+#[derive(PartialEq, Debug, Clone)]
 pub enum Page {
-    Page1,
-    Page2,
-    Page3,
+    FigureDrawing,
+    ReferenceBoard,
+    ReferenceStore,
 }
 
 /// The context page to display in the context drawer.

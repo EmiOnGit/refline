@@ -2,9 +2,15 @@
 
 mod app;
 mod config;
+mod figure_drawing;
 mod i18n;
+mod log;
+mod reference;
+mod view;
 
 fn main() -> cosmic::iced::Result {
+    // start logging
+    log::logger_init(false);
     // Get the system's preferred languages.
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
 
