@@ -67,13 +67,30 @@ impl RefStore {
             self.push_folder(folder.as_ref(), is_sfw, ref_dir.clone());
         }
     }
-    fn push_folder(&mut self, folder: &Path, is_sfw: bool, mut ref_dir_root: PathBuf) {
-        println!("try to add {folder:?}");
-        ref_dir_root.push(folder.file_name().unwrap());
-        while ref_dir_root.exists() {
-            let Some(filename) = ref_dir_root.file_name().unwrap().to_str() else {
+    fn push_folder(
+        &mut self,
+        folder_to_add: &Path,
+        is_sfw: bool,
+        mut ref_line_ref_folder: PathBuf,
+    ) {
+        info!("Add symbolic link to {folder_to_add:?}");
+        if ref_line_ref_folder
+            .read_dir()
+            .unwrap()
+            .flatten()
+            .filter_map(|folder| fs::read_link(folder.path()).ok())
+            .any(|folder| folder == folder_to_add)
+        {
+            tracing::warn!(
+                "tried to add folder {ref_line_ref_folder:?} but it was already linked. Ignoring request"
+            );
+            return;
+        }
+        ref_line_ref_folder.push(folder_to_add.file_name().unwrap());
+        while ref_line_ref_folder.exists() {
+            let Some(filename) = ref_line_ref_folder.file_name().unwrap().to_str() else {
                 tracing::error!(
-                    "Could not add folder {folder:?}, because it doesn't contain valid unicode"
+                    "Could not add folder {folder_to_add:?}, because it doesn't contain valid unicode"
                 );
                 return;
             };
@@ -84,14 +101,14 @@ impl RefStore {
                 .map(|(f, l)| (f, (l + 1).to_string()))
                 .map(|(f, l)| format!("{f}_{l}"))
                 .unwrap_or(format!("{filename}_1"));
-            ref_dir_root.pop();
-            ref_dir_root.push(new_filename);
+            ref_line_ref_folder.pop();
+            ref_line_ref_folder.push(new_filename);
         }
-        if let Err(e) = symlink::symlink_dir(folder, &ref_dir_root) {
-            error!("Failed to add symlink with src: {folder:?} dst: {ref_dir_root:?} error: {e}");
+        if let Err(e) = symlink::symlink_dir(folder_to_add, &ref_line_ref_folder) {
+            error!("Failed to add symlink with src: {folder_to_add:?} dst: {ref_line_ref_folder:?} error: {e}");
         };
-        warn!("reference folder loaded at {ref_dir_root:?}");
-        for mut img in recursive_get_imgs(&folder, false) {
+        warn!("reference folder loaded at {ref_line_ref_folder:?}");
+        for mut img in recursive_get_imgs(&folder_to_add, false) {
             img.is_sfw = is_sfw;
             self.references.replace(img);
         }
@@ -111,6 +128,7 @@ impl PartialEq for Reference {
 fn recursive_get_imgs(root: &Path, follow_root_links: bool) -> impl Iterator<Item = Reference> {
     walkdir::WalkDir::new(root)
         .follow_root_links(follow_root_links)
+        .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
         .map(|e| e.into_path())

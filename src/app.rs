@@ -6,7 +6,8 @@ use crate::reference::RefStore;
 use crate::{fl, view};
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
-use cosmic::iced::{Alignment, Subscription};
+use cosmic::iced::{event, keyboard, Alignment, Subscription};
+use cosmic::iced_core::Event;
 use cosmic::widget::{self, icon, menu, nav_bar};
 use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
@@ -46,7 +47,12 @@ pub enum Message {
     UpdateConfig(Config),
     AddFilesToRefStore,
     LoadNewReference,
+    IncreaseReferenceCounter {
+        amount: isize,
+    },
     LoadedNewReference(PathBuf, RgbaImage),
+    /// Can be assumed to always be of variant Message::Keypress`
+    Keypress(keyboard::Event),
 }
 
 /// Create a COSMIC application from the app model
@@ -175,8 +181,17 @@ impl Application for AppModel {
     /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
         struct MySubscription;
-
+        // .map(|f| Message::NewEvent(f));
         Subscription::batch(vec![
+            event::listen_with(|ev, _status, _id| {
+                let Event::Keyboard(ev) = ev else {
+                    return None;
+                };
+                if matches!(ev, keyboard::Event::KeyPressed { .. }) {
+                    return Some(Message::Keypress(ev));
+                }
+                None
+            }),
             // Create a subscription which emits updates through a channel.
             Subscription::run_with_id(
                 std::any::TypeId::of::<MySubscription>(),
@@ -262,6 +277,55 @@ impl Application for AppModel {
             Message::LoadedNewReference(path, img) => {
                 self.ref_store.ref_data.insert(path, img);
                 tracing::warn!("Inserted new reference");
+            }
+            Message::Keypress(key_event) => {
+                let keyboard::Event::KeyPressed {
+                    key,
+                    modified_key: _,
+                    physical_key: _,
+                    location: _,
+                    modifiers: _,
+                    text: _,
+                } = key_event
+                else {
+                    return Task::none();
+                };
+                if let Some(active_page) = self.nav.active_data::<Page>() {
+                    match active_page {
+                        Page::FigureDrawing => match key {
+                            keyboard::Key::Named(_name) => {}
+                            keyboard::Key::Character(c) => {
+                                info!("registered keyboard input: {c}");
+                                let c = c.chars().next().unwrap();
+                                if c == 'l' {
+                                    return Task::done(
+                                        Message::IncreaseReferenceCounter { amount: 1 }.into(),
+                                    );
+                                }
+                                if c == 'h' {
+                                    return Task::done(
+                                        Message::IncreaseReferenceCounter { amount: -1 }.into(),
+                                    );
+                                }
+                            }
+                            keyboard::Key::Unidentified => {
+                                tracing::warn!("unidentified keyboard press")
+                            }
+                        },
+                        Page::ReferenceBoard => {}
+                        Page::ReferenceStore => {}
+                    }
+                }
+            }
+            Message::IncreaseReferenceCounter { amount } => {
+                let state = &mut self.figure_drawing_state;
+                state.current_ref = match state.current_ref {
+                    Some(current) => Some(current.saturating_add_signed(amount)),
+                    None => Some((amount - 1).min(0) as usize),
+                };
+                if state.history.len() <= state.current_ref.unwrap() {
+                    return Task::done(Message::LoadNewReference.into());
+                };
             }
         }
         Task::none()
