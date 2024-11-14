@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::figure_drawing::FigureDrawingState;
-use crate::reference::RefStore;
+use crate::reference::{RefStore, SourceFolder};
 use crate::{fl, view};
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -51,8 +51,11 @@ pub enum Message {
         amount: isize,
     },
     LoadedNewReference(PathBuf, RgbaImage),
+    RemoveSource(SourceFolder),
     /// Can be assumed to always be of variant Message::Keypress`
     Keypress(keyboard::Event),
+    SetSfwFilter(bool),
+    SetSfwSource(bool, PathBuf),
 }
 
 /// Create a COSMIC application from the app model
@@ -99,7 +102,7 @@ impl Application for AppModel {
             .activate();
 
         let mut ref_store = RefStore::try_load().unwrap_or_default();
-        ref_store.sync_with_local_filesystem();
+        ref_store.sync_with_source_folders();
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
@@ -254,9 +257,18 @@ impl Application for AppModel {
             }
             Message::LoadNewReference => {
                 info!("LOAD NEW REF RECEIVED");
-                let references = &self.ref_store.references;
-                let index = fastrand::usize(..references.len());
-                let reference = references.iter().nth(index).unwrap().clone();
+                let sfw_filter = self.figure_drawing_state.sfw_only;
+                let count = self.ref_store.reference_count(sfw_filter);
+                if count == 0 {
+                    tracing::error!("Can not load new reference as no folders were added");
+                    return Task::none();
+                }
+                let index = fastrand::usize(..count);
+                let reference = self
+                    .ref_store
+                    .get_reference(index, sfw_filter)
+                    .cloned()
+                    .expect("reference count was calculated wrong");
                 self.figure_drawing_state.history.push(reference.clone());
                 if !self.figure_drawing_state.history.is_empty()
                     && self.figure_drawing_state.current_ref.is_none()
@@ -326,6 +338,32 @@ impl Application for AppModel {
                 if state.history.len() <= state.current_ref.unwrap() {
                     return Task::done(Message::LoadNewReference.into());
                 };
+            }
+            Message::RemoveSource(source) => {
+                let Some(index) = self.ref_store.source_folders.iter().position(|s| s == s) else {
+                    tracing::warn!("tried to remove source {source:?} but it was not found");
+                    return Task::none();
+                };
+                self.ref_store.source_folders.remove(index);
+                self.ref_store.save_to_disk();
+            }
+            Message::SetSfwFilter(sfw_only) => {
+                self.figure_drawing_state.sfw_only = sfw_only;
+                info!("set sfw filter to {sfw_only}");
+            }
+            Message::SetSfwSource(is_sfw, path) => {
+                if let Some(source) = self
+                    .ref_store
+                    .source_folders
+                    .iter_mut()
+                    .find(|s| s.path == path)
+                {
+                    source.is_sfw = is_sfw;
+                } else {
+                    tracing::warn!(
+                        "Tried to toggle sfw flag for source. No source registered at path {path:?}"
+                    );
+                }
             }
         }
         Task::none()
