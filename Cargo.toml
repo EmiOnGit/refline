@@ -30,6 +30,7 @@ features = ["fluent-system", "desktop-requester"]
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
+rev = "aaadf7199ebed8a5a04ebed559f62455d622689e"
 # See https://github.com/pop-os/libcosmic/blob/master/Cargo.toml for available features.
 features = [
 "debug",    # Accessibility support
