@@ -15,7 +15,7 @@ impl Default for FigureDrawingState {
         FigureDrawingState {
             current_ref: None,
             history: Vec::new(),
-            sfw_only: false,
+            sfw_only: true,
             duration_per_image: Duration::from_secs(1 * 60),
             last_fetched: Instant::now(),
         }
