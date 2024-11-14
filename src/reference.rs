@@ -117,6 +117,7 @@ fn recursive_get_imgs(
         .filter(|p| p.is_file())
         .filter(|p| {
             p.extension()
+                .map(|ext| ext.to_ascii_lowercase())
                 .map(|ext| {
                     ext == OsStr::new("jpg")
                         || ext == OsStr::new("png")
