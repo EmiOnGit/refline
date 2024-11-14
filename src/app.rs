@@ -2,17 +2,19 @@
 
 use crate::config::Config;
 use crate::figure_drawing::FigureDrawingState;
-use crate::reference::{RefStore, SourceFolder};
+use crate::reference::{RefStore, Reference, SourceFolder};
 use crate::{fl, view};
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::{event, keyboard, Alignment, Subscription};
 use cosmic::iced_core::Event;
+use cosmic::iced_futures::MaybeSend;
 use cosmic::widget::{self, icon, menu, nav_bar};
 use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
 use image::RgbaImage;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;
@@ -46,7 +48,7 @@ pub enum Message {
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
     AddFilesToRefStore,
-    LoadNewReference,
+    LoadNewReference(ReferenceLoad),
     IncreaseReferenceCounter {
         amount: isize,
     },
@@ -70,7 +72,7 @@ impl Application for AppModel {
     type Message = Message;
 
     /// Unique identifier in RDNN (reverse domain name notation) format.
-    const APP_ID: &'static str = "com.example.CosmicAppTemplate";
+    const APP_ID: &'static str = "Refline";
 
     fn core(&self) -> &Core {
         &self.core
@@ -169,7 +171,7 @@ impl Application for AppModel {
         let Some(active_page): Option<&Page> = self.nav.active_data() else {
             return view::center_text(fl!("welcome"));
         };
-        println!("update view{active_page:?}");
+        tracing::debug!("redraw view {active_page:?}");
         match active_page {
             Page::FigureDrawing => view::figure_drawing(self),
             Page::ReferenceBoard => view::reference_board(self),
@@ -222,7 +224,6 @@ impl Application for AppModel {
     /// Tasks may be returned for asynchronous execution of code in the background
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
-        // info!("update with {message:?}");
         match message {
             Message::OpenRepositoryUrl => {
                 _ = open::that_detached(REPOSITORY);
@@ -255,8 +256,21 @@ impl Application for AppModel {
                     self.ref_store.push_folders(&files, true)
                 }
             }
-            Message::LoadNewReference => {
-                info!("LOAD NEW REF RECEIVED");
+            Message::LoadNewReference(reference_load) => {
+                info!("Loading new reference started");
+                if let ReferenceLoad::Index(index) = reference_load {
+                    let Some(reference) = self.figure_drawing_state.history.get(index) else {
+                        tracing::error!(
+                            "Tried to load reference at index {index}, but history is only {} long",
+                            self.figure_drawing_state.history.len()
+                        );
+                        return Task::none();
+                    };
+                    if self.ref_store.ref_data.contains_key(&reference.path) {
+                        return Task::none();
+                    }
+                    return Task::future(load_reference(reference.clone(), reference_load));
+                }
                 let sfw_filter = self.figure_drawing_state.sfw_only;
                 let count = self.ref_store.reference_count(sfw_filter);
                 if count == 0 {
@@ -275,20 +289,31 @@ impl Application for AppModel {
                 {
                     self.figure_drawing_state.current_ref = Some(0);
                 }
-                return Task::future(async move {
-                    info!("start loading image as reference");
-                    let Ok(img) = image::open(&reference.path) else {
-                        tracing::warn!("failed loading image");
-                        return Message::LoadNewReference.into();
-                    };
-                    let img = img.to_rgba8();
-                    info!("finish loading reference");
-                    return Message::LoadedNewReference(reference.path, img).into();
-                });
+                return Task::future(load_reference(reference, reference_load));
             }
             Message::LoadedNewReference(path, img) => {
+                tracing::info!("Inserted new reference {path:?}");
                 self.ref_store.ref_data.insert(path, img);
-                tracing::warn!("Inserted new reference");
+                let Some(index) = self.figure_drawing_state.current_ref else {
+                    return Task::none();
+                };
+                if index != 0 {
+                    let keep = &self.figure_drawing_state.history[index.saturating_sub(3)..];
+                    self.ref_store.ref_data.retain(|k, _| {
+                        keep.contains(&crate::reference::Reference {
+                            path: k.to_path_buf(),
+                        })
+                    })
+                }
+                // tracing::warn!(
+                //     "prefetch condition indeex: {} history_len {}",
+                //     index,
+                //     self.figure_drawing_state.history.len()
+                // );
+                if self.figure_drawing_state.history.len() == index + 1 {
+                    tracing::info!("prefetch reference");
+                    return Task::done(Message::LoadNewReference(ReferenceLoad::PushLast).into());
+                }
             }
             Message::Keypress(key_event) => {
                 let keyboard::Event::KeyPressed {
@@ -335,13 +360,21 @@ impl Application for AppModel {
                     Some(current) => Some(current.saturating_add_signed(amount)),
                     None => Some((amount - 1).min(0) as usize),
                 };
-                if state.history.len() <= state.current_ref.unwrap() {
-                    return Task::done(Message::LoadNewReference.into());
+                let current_index = state.current_ref.unwrap();
+                if state.history.len() <= current_index + 1 {
+                    return Task::done(Message::LoadNewReference(ReferenceLoad::PushLast).into());
+                } else {
+                    let reference = &state.history[current_index];
+                    if !self.ref_store.ref_data.contains_key(&reference.path) {
+                        return Task::done(
+                            Message::LoadNewReference(ReferenceLoad::Index(current_index)).into(),
+                        );
+                    }
                 };
             }
             Message::RemoveSource(source) => {
                 let Some(index) = self.ref_store.source_folders.iter().position(|s| s == s) else {
-                    tracing::warn!("tried to remove source {source:?} but it was not found");
+                    tracing::warn!("Tried to remove source {source:?}, but it was not found");
                     return Task::none();
                 };
                 self.ref_store.source_folders.remove(index);
@@ -349,7 +382,7 @@ impl Application for AppModel {
             }
             Message::SetSfwFilter(sfw_only) => {
                 self.figure_drawing_state.sfw_only = sfw_only;
-                info!("set sfw filter to {sfw_only}");
+                info!("Set sfw filter to {sfw_only}");
             }
             Message::SetSfwSource(is_sfw, path) => {
                 if let Some(source) = self
@@ -395,8 +428,7 @@ impl AppModel {
         if figure_drawing_state.history.is_empty()
             || figure_drawing_state.last_fetched - now > figure_drawing_state.duration_per_image
         {
-            println!("send load ref message");
-            Task::done(Message::LoadNewReference.into())
+            Task::done(Message::LoadNewReference(ReferenceLoad::PushLast).into())
         } else {
             Task::none()
         }
@@ -475,4 +507,24 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
         }
     }
+}
+fn load_reference<T: From<Message>>(
+    reference: Reference,
+    reference_load: ReferenceLoad,
+) -> impl Future<Output = T> + MaybeSend + 'static {
+    async move {
+        info!("start loading image as reference");
+        let Ok(img) = image::open(&reference.path) else {
+            tracing::warn!("failed loading image");
+            return Message::LoadNewReference(reference_load).into();
+        };
+        let img = img.to_rgba8();
+        info!("finish loading reference");
+        return Message::LoadedNewReference(reference.path, img).into();
+    }
+}
+#[derive(Clone, Copy, Debug)]
+pub enum ReferenceLoad {
+    PushLast,
+    Index(usize),
 }

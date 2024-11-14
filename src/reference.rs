@@ -44,7 +44,7 @@ impl RefStore {
         }
     }
     pub fn try_load() -> Option<RefStore> {
-        let project_dirs = directories_next::ProjectDirs::from("com", "refline", "refline")?;
+        let project_dirs = directories_next::ProjectDirs::from("", "", "refline")?;
         let mut ref_store_path = project_dirs.data_dir().to_path_buf();
         ref_store_path.push(REF_STORE_FILENAME);
         let file = match fs::File::open(&ref_store_path) {
@@ -66,7 +66,7 @@ impl RefStore {
     /// Returns None if saving was not successfully
     /// Some(()) if the ref store was saved.
     pub fn save_to_disk(&self) -> Option<()> {
-        let project_dirs = directories_next::ProjectDirs::from("com", "refline", "refline")?;
+        let project_dirs = directories_next::ProjectDirs::from("", "", "refline")?;
         let mut ref_store_path = project_dirs.data_dir().to_path_buf();
         ref_store_path.push(REF_STORE_FILENAME);
 
