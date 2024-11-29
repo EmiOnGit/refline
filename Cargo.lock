@@ -988,29 +988,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-app-template"
-version = "0.1.0"
-dependencies = [
- "directories-next",
- "fastrand 2.2.0",
- "futures-util",
- "i18n-embed",
- "i18n-embed-fl",
- "image",
- "libcosmic",
- "open",
- "rfd 0.15.0",
- "ron",
- "rust-embed",
- "serde",
- "symlink",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "walkdir",
-]
-
-[[package]]
 name = "cosmic-client-toolkit"
 version = "0.1.0"
 source = "git+https://github.com/pop-os/cosmic-protocols?rev=c8d3a1c#c8d3a1c3d40d16235f4720969a54ed570ec7a976"
@@ -4228,6 +4205,29 @@ dependencies = [
  "getrandom",
  "libredox",
  "thiserror",
+]
+
+[[package]]
+name = "refline"
+version = "0.1.0"
+dependencies = [
+ "directories-next",
+ "fastrand 2.2.0",
+ "futures-util",
+ "i18n-embed",
+ "i18n-embed-fl",
+ "image",
+ "libcosmic",
+ "open",
+ "rfd 0.15.0",
+ "ron",
+ "rust-embed",
+ "serde",
+ "symlink",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
 ]
 
 [[package]]
