@@ -1,5 +1,5 @@
-name := 'cosmic-app-template'
-appid := 'com.example.CosmicAppTemplate'
+name := 'refline'
+appid := 'refline'
 
 rootdir := ''
 prefix := '/usr'

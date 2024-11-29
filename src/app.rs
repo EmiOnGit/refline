@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;
 
-const REPOSITORY: &str = "https://github.com/pop-os/cosmic-app-template";
+const REPOSITORY: &str = "https://github.com/emiongit/refline";
 const APP_ICON: &[u8] = include_bytes!("../res/icons/hicolor/scalable/apps/icon.svg");
 
 /// The application model stores app-specific state used to describe its interface and
