@@ -3,11 +3,10 @@ use crate::app::{self, AppModel};
 use crate::fl;
 use crate::reference_pane::{view_content, view_controls};
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::Alignment::Center;
+use cosmic::iced::Color;
 use cosmic::iced::Length::{self, Fill};
-use cosmic::iced::{Color, Size};
-use cosmic::iced_widget::{button, row, scrollable};
-use cosmic::widget::{self, canvas, container, pane_grid, responsive, text, PaneGrid};
+use cosmic::iced_widget::{button, row};
+use cosmic::widget::{self, pane_grid, responsive, text, PaneGrid};
 use cosmic::{Apply, Element};
 
 pub fn figure_drawing(app: &AppModel) -> Element<app::Message> {
@@ -48,7 +47,7 @@ pub fn reference_board(app: &AppModel) -> Element<app::Message> {
     let board = &app.reference_board;
 
     let focus = board.focus;
-    let total_panes = board.panes.len();
+    let total_panes = board.panes_created;
 
     let pane_grid = PaneGrid::new(&board.panes, |id, pane, is_maximized| {
         let is_focused = focus == Some(id);
@@ -69,24 +68,24 @@ pub fn reference_board(app: &AppModel) -> Element<app::Message> {
         ]
         .spacing(5);
 
-        // let title_bar = pane_grid::TitleBar::new(title)
-        //     .controls(pane_grid::Controls::dynamic(
-        //         view_controls(id, total_panes, pane.is_pinned, is_maximized),
-        //         button(text("X").size(14)).padding(3).on_press_maybe(
-        //             if total_panes > 1 && !pane.is_pinned {
-        //                 Some(Message::Close(id))
-        //             } else {
-        //                 None
-        //             },
-        //         ),
-        //     ))
-        //     .padding(10);
+        let title_bar_controls = widget::pane_grid::Controls::dynamic(
+            view_controls(id, total_panes, pane.is_pinned, is_maximized),
+            button(text("X").size(14)).padding(3).on_press_maybe(
+                if total_panes > 1 && !pane.is_pinned {
+                    Some(Message::Close(id))
+                } else {
+                    None
+                },
+            ),
+        );
+        let title_bar = widget::pane_grid::TitleBar::new(title)
+            .controls(title_bar_controls)
+            .padding(10);
 
         widget::pane_grid::Content::new(responsive(move |size| {
             view_content(id, total_panes, pane.is_pinned, size)
-            // cosmic::widget::text("hi").into()
         }))
-        // .title_bar(title_bar)
+        .title_bar(title_bar)
     })
     .width(Fill)
     .height(Fill)

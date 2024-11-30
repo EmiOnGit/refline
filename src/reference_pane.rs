@@ -96,7 +96,7 @@ pub fn view_controls<'a>(
     total_panes: usize,
     is_pinned: bool,
     is_maximized: bool,
-) -> Element<'a, app::Message> {
+) -> cosmic::Element<'a, app::Message> {
     let row = row![].spacing(5).push_maybe(if total_panes > 1 {
         let (content, message) = if is_maximized {
             ("Restore", Message::Restore)
