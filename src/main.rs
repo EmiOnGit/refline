@@ -4,8 +4,11 @@ mod app;
 mod config;
 mod figure_drawing;
 mod i18n;
+mod io;
 mod log;
 mod reference;
+mod reference_board;
+mod reference_pane;
 mod view;
 
 fn main() -> cosmic::iced::Result {

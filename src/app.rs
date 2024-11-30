@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: {{LICENSE}}
 
 use crate::config::Config;
-use crate::figure_drawing::FigureDrawingState;
+use crate::figure_drawing::{self, FigureDrawingState};
 use crate::reference::{RefStore, Reference, SourceFolder};
+use crate::reference_board::{self, ReferenceBoard};
 use crate::{fl, view};
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::{event, keyboard, Alignment, Subscription};
 use cosmic::iced_core::Event;
 use cosmic::iced_futures::MaybeSend;
+use cosmic::widget::pane_grid::{self, Axis, Pane};
 use cosmic::widget::{self, icon, menu, nav_bar};
 use cosmic::{cosmic_theme, theme, Application, ApplicationExt, Element};
 use futures_util::SinkExt;
@@ -38,6 +40,7 @@ pub struct AppModel {
     /// Image references
     pub ref_store: RefStore,
     pub figure_drawing_state: FigureDrawingState,
+    pub reference_board: ReferenceBoard,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -58,6 +61,17 @@ pub enum Message {
     Keypress(keyboard::Event),
     SetSfwFilter(bool),
     SetSfwSource(bool, PathBuf),
+    TogglePin(Pane),
+    Close(Pane),
+    Clicked,
+    Dragged,
+    Resized,
+    Restore,
+    Maximize(pane_grid::Pane),
+    Split(pane_grid::Axis, pane_grid::Pane),
+    SplitFocused(Axis),
+    CloseFocused,
+    FocusAdjacent,
 }
 
 /// Create a COSMIC application from the app model
@@ -105,11 +119,13 @@ impl Application for AppModel {
 
         let mut ref_store = RefStore::try_load().unwrap_or_default();
         ref_store.sync_with_source_folders();
+        let reference_board = ReferenceBoard::default();
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
             context_page: ContextPage::default(),
             nav,
+            reference_board,
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
@@ -328,29 +344,13 @@ impl Application for AppModel {
                     return Task::none();
                 };
                 if let Some(active_page) = self.nav.active_data::<Page>() {
-                    match active_page {
-                        Page::FigureDrawing => match key {
-                            keyboard::Key::Named(_name) => {}
-                            keyboard::Key::Character(c) => {
-                                info!("registered keyboard input: {c}");
-                                let c = c.chars().next().unwrap();
-                                if c == 'l' {
-                                    return Task::done(
-                                        Message::IncreaseReferenceCounter { amount: 1 }.into(),
-                                    );
-                                }
-                                if c == 'h' {
-                                    return Task::done(
-                                        Message::IncreaseReferenceCounter { amount: -1 }.into(),
-                                    );
-                                }
-                            }
-                            keyboard::Key::Unidentified => {
-                                tracing::warn!("unidentified keyboard press")
-                            }
-                        },
-                        Page::ReferenceBoard => {}
-                        Page::ReferenceStore => {}
+                    let message = match active_page {
+                        Page::FigureDrawing => figure_drawing::keypress(key),
+                        Page::ReferenceBoard => reference_board::keypress(key),
+                        Page::ReferenceStore => None,
+                    };
+                    if let Some(message) = message {
+                        return Task::done(message.into());
                     }
                 }
             }
@@ -398,6 +398,17 @@ impl Application for AppModel {
                     );
                 }
             }
+            Message::TogglePin(_) => todo!(),
+            Message::Close(_) => todo!(),
+            Message::Clicked => todo!(),
+            Message::Dragged => todo!(),
+            Message::Resized => todo!(),
+            Message::Restore => todo!(),
+            Message::Maximize(_) => todo!(),
+            Message::Split(_, _) => todo!(),
+            Message::SplitFocused(_) => todo!(),
+            Message::CloseFocused => todo!(),
+            Message::FocusAdjacent => todo!(),
         }
         Task::none()
     }

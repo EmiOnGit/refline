@@ -1,12 +1,10 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    fs,
     path::{Path, PathBuf},
 };
 
-use ron::ser::{to_writer_pretty, PrettyConfig};
-use tracing::{error, warn};
+use crate::io;
 
 pub const REF_STORE_FILENAME: &str = "refstore.ron";
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
@@ -44,36 +42,10 @@ impl RefStore {
         }
     }
     pub fn try_load() -> Option<RefStore> {
-        let project_dirs = directories_next::ProjectDirs::from("", "", "refline")?;
-        let mut ref_store_path = project_dirs.data_dir().to_path_buf();
-        ref_store_path.push(REF_STORE_FILENAME);
-        let file = match fs::File::open(&ref_store_path) {
-            Ok(file) => file,
-            Err(e) => {
-                warn!("Can not find storage file for references at {ref_store_path:?} with error {e:?}");
-                return None;
-            }
-        };
-        let des: RefStore = match ron::de::from_reader(file) {
-            Ok(res) => res,
-            Err(e) => {
-                error!("Could not deserialize storage file for references at {ref_store_path:?} with error {e:?}");
-                return None;
-            }
-        };
-        Some(des)
+        io::try_load(REF_STORE_FILENAME)
     }
-    /// Returns None if saving was not successfully
-    /// Some(()) if the ref store was saved.
     pub fn save_to_disk(&self) -> Option<()> {
-        let project_dirs = directories_next::ProjectDirs::from("", "", "refline")?;
-        let mut ref_store_path = project_dirs.data_dir().to_path_buf();
-        ref_store_path.push(REF_STORE_FILENAME);
-
-        let file = fs::File::create(ref_store_path).ok()?;
-        to_writer_pretty(file, self, PrettyConfig::new()).ok()?;
-        tracing::info!("saved ref store to disk");
-        Some(())
+        io::save_to_disk(self, REF_STORE_FILENAME)
     }
     pub fn push_folders(&mut self, folders: &[impl AsRef<Path>], is_sfw: bool) {
         for folder in folders {
