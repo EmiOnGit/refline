@@ -5,7 +5,6 @@ use cosmic::{
         keyboard::{self, Key},
         widget,
         Length::Fill,
-        Size,
     },
     iced_widget::{button, row},
     widget::{
@@ -16,7 +15,6 @@ use cosmic::{
 
 use crate::app::{self, Message};
 
-pub const REF_BOARD_FILENAME: &str = "refboard.ron";
 pub struct ReferenceBoard {
     pub panes: pane_grid::State<ReferenceNode>,
     pub focus: Option<pane_grid::Pane>,

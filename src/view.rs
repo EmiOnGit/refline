@@ -3,10 +3,9 @@ use crate::app::{self, AppModel};
 use crate::fl;
 use crate::reference_board::{view_content, view_controls};
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::Color;
 use cosmic::iced::Length::{self, Fill};
 use cosmic::iced_widget::{button, row};
-use cosmic::widget::{self, responsive, text, PaneGrid};
+use cosmic::widget::{self, text, PaneGrid};
 use cosmic::{Apply, Element};
 
 pub fn figure_drawing(app: &AppModel) -> Element<app::Message> {
@@ -33,25 +32,12 @@ pub fn figure_drawing(app: &AppModel) -> Element<app::Message> {
         .push(image)
         .into()
 }
-const PANE_ID_COLOR_UNFOCUSED: Color = Color::from_rgb(
-    0xFF as f32 / 255.0,
-    0xC7 as f32 / 255.0,
-    0xC7 as f32 / 255.0,
-);
-const PANE_ID_COLOR_FOCUSED: Color = Color::from_rgb(
-    0xFF as f32 / 255.0,
-    0x47 as f32 / 255.0,
-    0x47 as f32 / 255.0,
-);
 pub fn reference_board(app: &AppModel) -> Element<app::Message> {
     let board = &app.reference_board;
 
-    let focus = board.focus;
     let total_panes = board.panes_created;
 
     let pane_grid = PaneGrid::new(&board.panes, |id, pane, is_maximized| {
-        let is_focused = focus == Some(id);
-
         let pin_button = button(text(if pane.is_pinned { "Unpin" } else { "Pin" }).size(14))
             .on_press(Message::TogglePin(id))
             .padding(3);
