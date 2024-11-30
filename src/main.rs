@@ -8,7 +8,6 @@ mod io;
 mod log;
 mod reference;
 mod reference_board;
-mod reference_pane;
 mod view;
 
 fn main() -> cosmic::iced::Result {

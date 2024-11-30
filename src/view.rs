@@ -1,12 +1,12 @@
 use crate::app::Message;
 use crate::app::{self, AppModel};
 use crate::fl;
-use crate::reference_pane::{view_content, view_controls};
+use crate::reference_board::{view_content, view_controls};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::Color;
 use cosmic::iced::Length::{self, Fill};
 use cosmic::iced_widget::{button, row};
-use cosmic::widget::{self, pane_grid, responsive, text, PaneGrid};
+use cosmic::widget::{self, responsive, text, PaneGrid};
 use cosmic::{Apply, Element};
 
 pub fn figure_drawing(app: &AppModel) -> Element<app::Message> {
@@ -82,10 +82,7 @@ pub fn reference_board(app: &AppModel) -> Element<app::Message> {
             .controls(title_bar_controls)
             .padding(10);
 
-        widget::pane_grid::Content::new(responsive(move |size| {
-            view_content(id, total_panes, pane.is_pinned, size)
-        }))
-        .title_bar(title_bar)
+        widget::pane_grid::Content::new(view_content(&pane.path)).title_bar(title_bar)
     })
     .width(Fill)
     .height(Fill)

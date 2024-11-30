@@ -1,11 +1,20 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use cosmic::{
-    iced::keyboard::{self, Key},
-    widget::pane_grid::{self, Axis},
+    iced::{
+        keyboard::{self, Key},
+        widget,
+        Length::Fill,
+        Size,
+    },
+    iced_widget::{button, row},
+    widget::{
+        pane_grid::{self, Axis},
+        scrollable, text,
+    },
 };
 
-use crate::app::Message;
+use crate::app::{self, Message};
 
 pub const REF_BOARD_FILENAME: &str = "refboard.ron";
 pub struct ReferenceBoard {
@@ -60,4 +69,41 @@ pub fn keypress(key_press: Key) -> Option<Message> {
         }
         _ => None,
     }
+}
+pub fn view_content<'a>(image_path: &Path) -> cosmic::Element<'a, app::Message> {
+    let content = widget::image(image_path);
+
+    cosmic::widget::container(scrollable(content))
+        .center_y(Fill)
+        .padding(5)
+        .into()
+}
+
+pub fn view_controls<'a>(
+    pane: pane_grid::Pane,
+    total_panes: usize,
+    is_pinned: bool,
+    is_maximized: bool,
+) -> cosmic::Element<'a, app::Message> {
+    let row = row![].spacing(5).push_maybe(if total_panes > 1 {
+        let (content, message) = if is_maximized {
+            ("Restore", Message::Restore)
+        } else {
+            ("Maximize", Message::Maximize(pane))
+        };
+
+        Some(button(text(content).size(14)).padding(3).on_press(message))
+    } else {
+        None
+    });
+
+    let close = button(text("Close").size(14)).padding(3).on_press_maybe(
+        if total_panes > 1 && !is_pinned {
+            Some(Message::Close(pane))
+        } else {
+            None
+        },
+    );
+
+    row.push(close).into()
 }
